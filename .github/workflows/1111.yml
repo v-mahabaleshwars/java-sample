@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: actions/setup-java
-          ref: brunoborges-fix-toolchain-overwrite-issue-1099
+          ref: main
 
       - name: Build the action from source
         run: |
@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: actions/setup-java
-          ref: brunoborges-fix-toolchain-overwrite-issue-1099
+          ref: main
       - run: |
           npm ci
           npm run build
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: actions/setup-java
-          ref: brunoborges-fix-toolchain-overwrite-issue-1099
+          ref: main
       - run: |
           npm ci
           npm run build
@@ -167,7 +167,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: actions/setup-java
-          ref: brunoborges-fix-toolchain-overwrite-issue-1099
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 20

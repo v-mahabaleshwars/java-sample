@@ -1,0 +1,190 @@
+name: Test PR 1111 - Preserve Maven toolchains across runs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Core regression: three consecutive setup-java runs must accumulate 3 JDKs.
+  # Also sets overwrite-settings: false to prove toolchains is decoupled from it.
+  # ---------------------------------------------------------------------------
+  multiple-consecutive-runs:
+    name: Consecutive runs (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          repository: actions/setup-java
+          ref: brunoborges-fix-toolchain-overwrite-issue-1099
+
+      - name: Build the action from source
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup JDK 8 (overwrite-settings false)
+        uses: ./
+        with:
+          distribution: temurin
+          java-version: '8'
+          overwrite-settings: false
+
+      - name: Setup JDK 11 (overwrite-settings false)
+        uses: ./
+        with:
+          distribution: temurin
+          java-version: '11'
+          overwrite-settings: false
+
+      - name: Setup JDK 17 (overwrite-settings false)
+        uses: ./
+        with:
+          distribution: temurin
+          java-version: '17'
+          overwrite-settings: false
+
+      - name: Print toolchains.xml
+        shell: bash
+        run: cat "$HOME/.m2/toolchains.xml"
+
+      - name: Assert all three JDKs present exactly once
+        shell: bash
+        run: |
+          FILE="$HOME/.m2/toolchains.xml"
+          test -f "$FILE" || { echo "toolchains.xml missing"; exit 1; }
+
+          for v in 8 11 17; do
+            if ! grep -q "<version>$v</version>" "$FILE"; then
+              echo "ERROR: JDK $v missing from toolchains.xml"
+              exit 1
+            fi
+          done
+
+          COUNT=$(grep -c "<toolchain>" "$FILE")
+          echo "toolchain entries: $COUNT"
+          if [ "$COUNT" -ne 3 ]; then
+            echo "ERROR: expected 3 toolchain entries, found $COUNT"
+            exit 1
+          fi
+          echo "PASS: 3 JDKs preserved, no duplicates, none dropped."
+
+  # ---------------------------------------------------------------------------
+  # Matrix-style separate jobs is not the repro; instead prove a single job
+  # with multiple java-version values also lists every JDK.
+  # ---------------------------------------------------------------------------
+  multiple-versions-single-step:
+    name: Multiple java-version values in one step
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: actions/setup-java
+          ref: brunoborges-fix-toolchain-overwrite-issue-1099
+      - run: |
+          npm ci
+          npm run build
+      - uses: ./
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+      - name: Assert both JDKs present
+        shell: bash
+        run: |
+          FILE="$HOME/.m2/toolchains.xml"
+          cat "$FILE"
+          grep -q "<version>8</version>" "$FILE" || { echo "JDK 8 missing"; exit 1; }
+          grep -q "<version>17</version>" "$FILE" || { echo "JDK 17 missing"; exit 1; }
+          echo "PASS"
+
+  # ---------------------------------------------------------------------------
+  # Verify a pre-existing / user-managed toolchain entry is preserved
+  # (non-destructive merge) after setup-java runs.
+  # ---------------------------------------------------------------------------
+  preserve-user-managed-toolchain:
+    name: Preserve user-managed toolchain entry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: actions/setup-java
+          ref: brunoborges-fix-toolchain-overwrite-issue-1099
+      - run: |
+          npm ci
+          npm run build
+
+      - name: Seed a custom toolchains.xml
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.m2"
+          cat > "$HOME/.m2/toolchains.xml" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <toolchains xmlns="http://maven.apache.org/TOOLCHAINS/1.1.0">
+            <toolchain>
+              <type>jdk</type>
+              <provides>
+                <version>1.6</version>
+                <vendor>sun</vendor>
+                <id>sun_1.6</id>
+              </provides>
+              <configuration>
+                <jdkHome>/opt/jdk/sun/1.6</jdkHome>
+              </configuration>
+            </toolchain>
+          </toolchains>
+          EOF
+
+      - name: Setup JDK 21 with overwrite-settings false
+        uses: ./
+        with:
+          distribution: temurin
+          java-version: '21'
+          overwrite-settings: false
+
+      - name: Assert custom entry preserved AND new JDK appended
+        shell: bash
+        run: |
+          FILE="$HOME/.m2/toolchains.xml"
+          cat "$FILE"
+          grep -q "<id>sun_1.6</id>" "$FILE" || { echo "ERROR: user entry dropped"; exit 1; }
+          grep -q "<jdkHome>/opt/jdk/sun/1.6</jdkHome>" "$FILE" || { echo "ERROR: user jdkHome dropped"; exit 1; }
+          grep -q "<version>21</version>" "$FILE" || { echo "ERROR: new JDK not appended"; exit 1; }
+          echo "PASS: non-destructive merge confirmed."
+
+  # ---------------------------------------------------------------------------
+  # Run the project's own unit tests, including the new regression test.
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Unit tests + lint + format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: actions/setup-java
+          ref: brunoborges-fix-toolchain-overwrite-issue-1099
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run format-check
+      - run: npm run lint
+      - name: Run toolchains regression tests
+        run: npx jest __tests__/toolchains.test.ts
+      - name: Verify dist/ is in sync with source
+        shell: bash
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain dist/)" ]; then
+            echo "ERROR: dist/ is out of date. Run 'npm run build' and commit."
+            git diff dist/
+            exit 1
+          fi
+          echo "PASS: dist/ in sync."

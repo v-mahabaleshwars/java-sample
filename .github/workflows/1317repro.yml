@@ -12,4 +12,4 @@ jobs:
         with:
           distribution: 'jetbrains'
           check-latest: true
-          java-version: '25.0.4.1+635.79'
+          java-version: 'jbr-release-25.0.4.1b635.79'

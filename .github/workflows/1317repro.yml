@@ -1,0 +1,14 @@
+name: 1317 repro workflow
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: test install 
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'jetbrains'
+          java-version: '25'

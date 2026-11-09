@@ -11,5 +11,5 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: 'jetbrains'
-          check-latest: false
+          check-latest: true
           java-version: '25.0.4.1+635.79'
